@@ -115,21 +115,34 @@ function verifyRefreshToken(req) {
 }
 
 async function getUserCartDetail(userId) {
+  const toObjectId = (id) =>
+    typeof id === "string" ? new mongoose.Types.ObjectId(id) : id;
+
   const cartDetail = await UserModel.aggregate([
-    {
-      $match: { _id: userId },
-    },
-    {
-      $project: { cart: 1, name: 1 },
-    },
+    { $match: { _id: toObjectId(userId) } },
+    { $project: { cart: 1, name: 1 } },
+
     {
       $lookup: {
         from: "products",
         localField: "cart.products.productId",
         foreignField: "_id",
         as: "productDetail",
+        pipeline: [
+          {
+            $project: {
+              title: 1,
+              slug: 1,
+              price: 1,
+              offPrice: 1,
+              discount: 1,
+              imageLinks: 1,
+            },
+          },
+        ],
       },
     },
+
     {
       $lookup: {
         from: "coupons",
@@ -141,37 +154,23 @@ async function getUserCartDetail(userId) {
     {
       $project: {
         name: 1,
-        coupon: { $arrayElemAt: ["$coupon", 0] },
         cart: 1,
-        productDetail: {
-          _id: 1,
-          slug: 1,
-          title: 1,
-          icon: 1,
-          discount: 1,
-          price: 1,
-          offPrice: 1,
-          imageLink: 1,
-        },
+        productDetail: 1,
+        coupon: { $arrayElemAt: ["$coupon", 0] },
       },
     },
+
     {
       $addFields: {
         productDetail: {
           $function: {
             body: function (productDetail, products) {
               return productDetail.map(function (product) {
-                const quantity = products.find(
-                  (item) => item.productId.valueOf() == product._id.valueOf()
-                ).quantity;
-                // const totalPrice = count * product.price;
-                return {
-                  ...product,
-                  quantity,
-                  // totalPrice,
-                  // finalPrice:
-                  //   totalPrice - (product.discount / 100) * totalPrice,
-                };
+                const found = products.find(
+                  (item) => String(item.productId) === String(product._id)
+                );
+                const quantity = found ? found.quantity : 1;
+                return { ...product, quantity };
               });
             },
             args: ["$productDetail", "$cart.products"],
@@ -180,6 +179,7 @@ async function getUserCartDetail(userId) {
         },
       },
     },
+
     {
       $addFields: {
         discountDetail: {
@@ -187,32 +187,36 @@ async function getUserCartDetail(userId) {
             body: function discountDetail(productDetail, coupon) {
               if (!coupon)
                 return { newProductDetail: productDetail, coupon: null };
-              const isExpiredCoupon =
+
+              const isExpired =
                 coupon.expireDate &&
                 new Date(coupon.expireDate).getTime() < Date.now();
               const isReachedLimit = coupon.usageCount >= coupon.usageLimit;
-              if (!coupon.isActive || isReachedLimit || isExpiredCoupon)
-                return null;
+              if (!coupon.isActive || isReachedLimit || isExpired) return null;
 
               const newProductDetail = productDetail.map((product) => {
                 if (product.discount) return product;
-                if (coupon.productIds.find((id) => id.equals(product._id))) {
-                  if (coupon.type === "fixedProduct") {
-                    if (product.price < coupon.amount) return product;
-                    return {
-                      ...product,
-                      offPrice: product.price - coupon.amount,
-                    };
-                  }
-                  if (coupon.type === "percent") {
-                    return {
-                      ...product,
-                      offPrice: parseInt(
-                        product.price * (1 - coupon.amount / 100)
-                      ),
-                    };
-                  }
-                } else return product;
+                const includes = coupon.productIds.find(
+                  (id) => String(id) === String(product._id)
+                );
+                if (!includes) return product;
+
+                if (coupon.type === "fixedProduct") {
+                  if (product.price < coupon.amount) return product;
+                  return {
+                    ...product,
+                    offPrice: product.price - coupon.amount,
+                  };
+                }
+                if (coupon.type === "percent") {
+                  return {
+                    ...product,
+                    offPrice: parseInt(
+                      product.price * (1 - coupon.amount / 100)
+                    ),
+                  };
+                }
+                return product;
               });
 
               return {
@@ -226,40 +230,35 @@ async function getUserCartDetail(userId) {
         },
       },
     },
+
     {
       $addFields: {
         payDetail: {
           $function: {
             body: function (productDetail, userName) {
-              const totalPrice = productDetail.reduce((total, product) => {
-                return total + parseInt(product.offPrice * product.quantity);
-              }, 0);
-              const totalGrossPrice = productDetail.reduce((total, product) => {
-                return total + parseInt(product.price * product.quantity);
-              }, 0);
-              const totalOffAmount = productDetail.reduce((total, product) => {
-                return (
-                  total +
-                  parseInt(
-                    (product.price - product.offPrice) * product.quantity
-                  )
-                );
-              }, 0);
-              const orderItems = [];
-              productDetail.map((product) => {
-                orderItems.push({
-                  price: product.offPrice,
-                  product: product._id,
-                });
-              });
-              const productIds = productDetail.map((product) =>
-                product._id.valueOf()
+              const totalPrice = productDetail.reduce(
+                (t, p) => t + parseInt((p.offPrice ?? p.price) * p.quantity),
+                0
               );
-              const description = `${productDetail
-                .map((p) => p.title)
-                .join(" - ")} | ${userName}`;
+              const totalGrossPrice = productDetail.reduce(
+                (t, p) => t + parseInt(p.price * p.quantity),
+                0
+              );
+              const totalOffAmount = totalGrossPrice - totalPrice;
+
+              const orderItems = productDetail.map((p) => ({
+                price: p.offPrice ?? p.price,
+                product: p._id,
+              }));
+
+              const productIds = productDetail.map((p) => String(p._id));
+              const description =
+                productDetail.map((p) => p.title).join(" - ") +
+                " | " +
+                userName;
+
               return {
-                totalOffAmount, // including discount and coupon
+                totalOffAmount,
                 totalPrice,
                 totalGrossPrice,
                 orderItems,
@@ -273,22 +272,19 @@ async function getUserCartDetail(userId) {
         },
       },
     },
+
     {
       $set: {
         productDetail: "$discountDetail.newProductDetail",
         coupon: "$discountDetail.coupon",
       },
     },
-    {
-      $project: {
-        cart: 0,
-        name: 0,
-        discountDetail: 0,
-      },
-    },
+    { $project: { cart: 0, name: 0, discountDetail: 0 } },
   ]);
+
   return copyObject(cartDetail);
 }
+
 function copyObject(object) {
   return JSON.parse(JSON.stringify(object));
 }

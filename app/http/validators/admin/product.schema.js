@@ -25,9 +25,13 @@ const addProductSchema = Joi.object({
     .required()
     .error(createError.BadRequest("The product stock is invalid.")),
 
-  imageLink: Joi.string()
-    .optional()
-    .allow("")
+  // imageLink: Joi.string()
+  //   .optional()
+  //   .allow("")
+  //   .error(createError.BadRequest("The product image link is not correct.")),
+  imageLinks: Joi.array()
+    .items(Joi.string())
+    .required()
     .error(createError.BadRequest("The product image link is not correct.")),
 
   tags: Joi.alternatives()

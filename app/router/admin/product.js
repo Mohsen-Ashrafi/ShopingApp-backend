@@ -5,13 +5,22 @@ const {
   ProductController,
 } = require("../../http/controllers/admin/product/product.controller");
 
+// const {
+//   uploadProductImage,
+// } = require("../../http/middlewares/upload.middleware");
+
 const {
-  uploadProductImage,
+  uploadProductImages,
 } = require("../../http/middlewares/upload.middleware");
 
+// router.post(
+//   "/add",
+//   uploadProductImage,
+//   expressAsyncHandler(ProductController.addNewProduct)
+// );
 router.post(
   "/add",
-  uploadProductImage,
+  uploadProductImages,
   expressAsyncHandler(ProductController.addNewProduct)
 );
 
@@ -20,9 +29,14 @@ router.delete(
   expressAsyncHandler(ProductController.removeProduct)
 );
 
+// router.patch(
+//   "/update/:id",
+//   uploadProductImage,
+//   expressAsyncHandler(ProductController.updateProduct)
+// );
 router.patch(
   "/update/:id",
-  uploadProductImage,
+  uploadProductImages,
   expressAsyncHandler(ProductController.updateProduct)
 );
 

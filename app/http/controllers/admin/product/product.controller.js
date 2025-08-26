@@ -19,46 +19,25 @@ const {
 
 class ProductController extends Controller {
   async addNewProduct(req, res) {
-    await addProductSchema.validateAsync(req.body);
-
-    const imageFile = req.file;
-    if (!imageFile) {
-      throw createHttpError.BadRequest("Product image not submitted");
+    const imageFiles = req.files;
+    if (!imageFiles || imageFiles.length === 0) {
+      throw createHttpError.BadRequest("Product images not submitted");
     }
 
-    const imageLink = path
-      .join("/uploads/products/", imageFile.filename)
-      .replace(/\\/g, "/");
+    const imageLinks = imageFiles.map((file) =>
+      path.join("/uploads/products/", file.filename).replace(/\\/g, "/")
+    );
 
-    const {
-      title,
-      description,
-      slug,
-      brand,
-      tags,
-      category,
-      price,
-      discount = 0,
-      offPrice,
-      countInStock,
-    } = req.body;
-
-    const product = await ProductModel.create({
-      title,
-      description,
-      slug,
-      imageLink,
-      brand,
-      tags,
-      category,
-      price,
-      discount,
-      offPrice,
-      countInStock,
+    const validatedData = await addProductSchema.validateAsync({
+      ...req.body,
+      imageLinks,
     });
 
-    if (!product?._id)
+    const product = await ProductModel.create(validatedData);
+
+    if (!product?._id) {
       throw createHttpError.InternalServerError("Product not registered");
+    }
 
     return res.status(HttpStatus.CREATED).json({
       statusCode: HttpStatus.CREATED,
@@ -217,12 +196,14 @@ class ProductController extends Controller {
     let blackListFields = ["bookmarks", "likes", "reviews"];
     deleteInvalidPropertyInObject(data, blackListFields);
 
-    const imageFile = req.file;
-    if (imageFile) {
-      const imageLink = path
-        .join("/uploads/products/", imageFile.filename)
-        .replace(/\\/g, "/");
-      data.imageLink = imageLink;
+    const imageFiles = req.files;
+    if (imageFiles && imageFiles.length > 0) {
+      const imageLinks = imageFiles.map((file) =>
+        path.join("/uploads/products/", file.filename).replace(/\\/g, "/")
+      );
+      data.imageLinks = imageLinks;
+    } else {
+      delete data.imageLinks;
     }
 
     const updateProductResult = await ProductModel.updateOne(

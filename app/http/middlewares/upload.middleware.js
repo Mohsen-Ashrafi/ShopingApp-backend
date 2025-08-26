@@ -4,7 +4,15 @@ const fs = require("fs");
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, "..", "..", "..", "public", "uploads", "products");
+    const uploadPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "public",
+      "uploads",
+      "products"
+    );
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
@@ -18,5 +26,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 module.exports = {
-  uploadProductImage: upload.single("image"), 
+  // uploadProductImage: upload.single("image"),
+  uploadProductImages: upload.array("images", 5),
 };
